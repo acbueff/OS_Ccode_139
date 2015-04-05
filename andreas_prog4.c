@@ -15,9 +15,9 @@ FILE *infile;
 FILE *outfile;
 
 
-sem_t buf_lock; //=1
-sem_t slot_avail; //=n
-sem_t item_avail; // =0
+//sem_t buf_lock; //=1
+//sem_t slot_avail; //=n
+//sem_t item_avail; // =0
 
 int flag = 0; //indicate when the producing/consuming process ends
 int slot = 0;//next available slot for producer
@@ -28,6 +28,13 @@ int item_buff=0; //number items in buffer
 pthread_t produce;
 pthread_t consume;
 
+//mutex
+pthread_mutex_t buf_lock =PTHREAD_MUTEX_INITIALIZER;
+
+pthread_cond_t empty_slot=PTHREAD_COND_INITIALIZER;
+pthread_cond_t avail_item=PTHREAD_COND_INITIALIZER;
+	
+
 //thread methods
 void *producer();
 
@@ -37,14 +44,18 @@ void *consumer();
 
 int main(int argc, char *argv[]){
 
-	
-
-	
-	//create semaphores
-	sem_init(&buf_lock, 0, 1);
-	sem_init(&slot_avail, 0, 9);
-	sem_init(&item_avail, 0, 0);
-	
+	if(pthread_mutex_init(&buf_lock, NULL) !=0){
+		printf("Mutex myLocke1 failed \n");
+		return 1;
+	}
+	if(pthread_cond_init(&empty_slot, NULL) !=0){
+		printf("Mutex myLocke1 failed \n");
+		return 1;
+	}
+	if(pthread_cond_init(&avial_item, NULL) !=0){
+		printf("Mutex myLocke1 failed \n");
+		return 1;
+	}
 
 	//check for to file inputs
 	if(argc != 3)
@@ -87,13 +98,17 @@ void *producer(FILE *infile){
 	int index = 0;
 	int next_produced[18];
 	int end_producer = 0;//flag
-	
 	do{
 		/*produce an time in next_produced*/
 
 			sem_wait(&slot_avail);
 		
 			sem_wait(&buf_lock);
+			
+			pthread_mutex_lock(&buf_lock);
+			while(slot == 9){//find way to check if buffer is full
+				pthread_cond_wait(&empty_slot,&buf_unlock);
+			}
 			//check if available with slot_avail
 			/*add next_produced to the buffer*/
 			for(i = 0; i < SLOTSIZE; i++){
@@ -119,9 +134,11 @@ void *producer(FILE *infile){
 			
 			memset(next_produced, 0, sizeof next_produced);
 			
-			sem_post(&buf_lock);
-			sem_post(&item_avail);
-		
+			//sem_post(&buf_lock);
+			//sem_post(&item_avail);
+			pthread_cond_signal(&avail_item);
+			pthread_mutex_unlock(&buf_lock);
+			
 		if(end_producer){ 
 			//tell consumer producer is done
 			flag = end_producer;
@@ -129,7 +146,7 @@ void *producer(FILE *infile){
 		}
 		
 	}while(1);
-	
+	//destroy mutex?
 	pthread_exit(0);
 }
 
@@ -149,6 +166,10 @@ void *consumer(FILE *outfile){
 		
 			slot--;//because slot is getting consumed
 			
+			pthread_mutex_lock(&buf_lock);
+			while(item_buff == 0){
+				pthread_cond_wait(&avail_item,&buf_lock);
+			}
 			//iterate through buffer
 			for(r=0; r<SLOTSIZE; r++){
 				next_consumed[r] = buffer[item_buff][r];
@@ -163,9 +184,10 @@ void *consumer(FILE *outfile){
 			item_buff++;
 			item_buff= item_buff % SLOTCNT;
 	
-			sem_post(&buf_lock);
-			sem_post(&slot_avail);
-			
+			//sem_post(&buf_lock);
+			//sem_post(&slot_avail);
+			pthread_cond_signal(&empty_slot);
+			pthread_mutex_unlock(&buf_lock);
 
 		if(flag && slot == 0){ //producer done and buffer empty
 
