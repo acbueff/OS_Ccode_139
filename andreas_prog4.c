@@ -52,7 +52,7 @@ int main(int argc, char *argv[]){
 		printf("Mutex myLocke1 failed \n");
 		return 1;
 	}
-	if(pthread_cond_init(&avial_item, NULL) !=0){
+	if(pthread_cond_init(&avail_item, NULL) !=0){
 		printf("Mutex myLocke1 failed \n");
 		return 1;
 	}
@@ -79,8 +79,11 @@ int main(int argc, char *argv[]){
 			pthread_create(&produce, NULL,  producer,(void *) infile);
 			pthread_create(&consume, NULL,  consumer,(void *) outfile);
 			//wait for threads to end
+			
 			pthread_join(produce, NULL);
-			pthread_join(consume, NULL);	
+			pthread_join(consume, NULL);
+			pthread_cond_destroy(&empty_slot);
+			pthread_cond_destroy(&avail_item);	
 			//close files
 			fclose(infile);
 			fclose(outfile);
@@ -101,14 +104,16 @@ void *producer(FILE *infile){
 	do{
 		/*produce an time in next_produced*/
 
-			sem_wait(&slot_avail);
+			//sem_wait(&slot_avail);
 		
-			sem_wait(&buf_lock);
+			//sem_wait(&buf_lock);
 			
 			pthread_mutex_lock(&buf_lock);
-			while(slot == 9){//find way to check if buffer is full
-				pthread_cond_wait(&empty_slot,&buf_unlock);
+			while(slot == 8){//find way to check if buffer is full
+				pthread_cond_wait(&empty_slot,&buf_lock);
+				printf("STUCK\n");
 			}
+			printf("PRODUCER:: made it past while loop \n");
 			//check if available with slot_avail
 			/*add next_produced to the buffer*/
 			for(i = 0; i < SLOTSIZE; i++){
@@ -128,6 +133,7 @@ void *producer(FILE *infile){
 				buffer[index][j] = (char)next_produced[j];
 			}
 			
+			
 			index++;
 			index = index % SLOTCNT;
 			slot++;
@@ -138,7 +144,7 @@ void *producer(FILE *infile){
 			//sem_post(&item_avail);
 			pthread_cond_signal(&avail_item);
 			pthread_mutex_unlock(&buf_lock);
-			
+			printf("PRODUCER:: made it past mutex_unlock \n");
 		if(end_producer){ 
 			//tell consumer producer is done
 			flag = end_producer;
@@ -159,17 +165,22 @@ void *consumer(FILE *outfile){
 	char next_consumed[18];
     do{
 	
-			sem_wait(&item_avail);
-			sem_wait(&buf_lock);
+			//sem_wait(&avail_item);
+			//sem_wait(&buf_lock);
 			/*check if item avialable with item_avail
 			/*remove an item fro  buffer to next_consumed*/
 		
 			slot--;//because slot is getting consumed
-			
+			printf("CONSUMER:: made it into do while\n");
 			pthread_mutex_lock(&buf_lock);
-			while(item_buff == 0){
+			printf("CONSUMER:: made it past mutex(bud_lock)\n");
+			while(slot == 0){
+				if(flag && slot == 0){ //producer done and buffer empty
+				break;
+				}
 				pthread_cond_wait(&avail_item,&buf_lock);
 			}
+			printf("CONSUMER:: made it past while loop \n");
 			//iterate through buffer
 			for(r=0; r<SLOTSIZE; r++){
 				next_consumed[r] = buffer[item_buff][r];
@@ -199,3 +210,4 @@ void *consumer(FILE *outfile){
 
 	pthread_exit(0);
 }
+
